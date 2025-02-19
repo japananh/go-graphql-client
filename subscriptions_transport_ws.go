@@ -110,7 +110,6 @@ func (stw *subscriptionsTransportWS) Unsubscribe(ctx *SubscriptionContext, sub S
 
 // OnMessage listens ongoing messages from server
 func (stw *subscriptionsTransportWS) OnMessage(ctx *SubscriptionContext, subscription Subscription, message OperationMessage) error {
-
 	switch message.Type {
 	case GQLError:
 		ctx.Log(message, "server", GQLError)
@@ -177,24 +176,18 @@ func (stw *subscriptionsTransportWS) OnMessage(ctx *SubscriptionContext, subscri
 	case GQLComplete:
 		ctx.Log(message, "server", GQLComplete)
 		sub := ctx.GetSubscription(message.ID)
-		if ctx.OnSubscriptionComplete != nil {
-			if sub == nil {
-				ctx.OnSubscriptionComplete(Subscription{
-					id: message.ID,
-				})
-			} else {
-				ctx.OnSubscriptionComplete(*sub)
-				ctx.SetSubscription(sub.GetKey(), nil)
-			}
-		}
-		if sub != nil {
+
+		if sub == nil {
+			ctx.OnSubscriptionComplete(Subscription{
+				id: message.ID,
+			})
+		} else {
+			ctx.OnSubscriptionComplete(*sub)
 			ctx.SetSubscription(sub.GetKey(), nil)
 		}
 	case GQLConnectionKeepAlive:
 		ctx.Log(message, "server", GQLConnectionKeepAlive)
-		if ctx.OnConnectionAlive != nil {
-			ctx.OnConnectionAlive()
-		}
+		ctx.OnConnectionAlive()
 	case GQLConnectionAck:
 		// Expected response to the ConnectionInit message from the client acknowledging a successful connection with the server.
 		// The client is now ready to request subscription operations.
@@ -207,9 +200,8 @@ func (stw *subscriptionsTransportWS) OnMessage(ctx *SubscriptionContext, subscri
 				return nil
 			}
 		}
-		if ctx.OnConnected != nil {
-			ctx.OnConnected()
-		}
+
+		ctx.OnConnected()
 	default:
 		ctx.Log(message, "server", GQLUnknown)
 	}

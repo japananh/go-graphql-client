@@ -34,6 +34,8 @@ For more information, see package [`github.com/shurcooL/githubv4`](https://githu
       - [Options](#options)
       - [Subscription Protocols](#subscription-protocols)
       - [Handle connection error](#handle-connection-error)
+        - [Connection Initialisation Timeout](#connection-initialisation-timeout)
+        - [WebSocket Connection Idle Timeout](#websocket-connection-idle-timeout)
       - [Events](#events)
       - [Custom HTTP Client](#custom-http-client)
       - [Custom WebSocket client](#custom-websocket-client)
@@ -646,12 +648,55 @@ GraphQL servers can define custom WebSocket error codes in the 3000-4999 range. 
 ```go
 client := graphql.NewSubscriptionClient(serverEndpoint).
   OnError(func(sc *graphql.SubscriptionClient, err error) error {
-  	if strings.Contains(err.Error(), "invalid x-hasura-admin-secret/x-hasura-access-key") {
+  	if sc.IsUnauthorized(err) || strings.Contains(err.Error(), "invalid x-hasura-admin-secret/x-hasura-access-key") {
 			// exit the subscription client due to unauthorized error
   		return err
   	}
-		// otherwise ignore the error and the client continues to run
+
+		if sc.IsInternalConnectionError(err) {
+			return err
+		}
+
+		// otherwise ignore the error and the client will restart.
   	return nil
+  })
+```
+
+##### Connection Initialisation Timeout
+
+The connection initialisation timeout error happens when the subscription client emitted the `ConnectionInit` event but hasn't received any message for a long duration. The default timeout is a minute. You can adjust the timeout by calling the `WithConnectionInitialisationTimeout` method. This error is disabled if the timeout duration is `0`.
+
+```go
+client := graphql.NewSubscriptionClient(serverEndpoint).
+	WithConnectionInitialisationTimeout(2*time.Minute).
+  OnError(func(sc *graphql.SubscriptionClient, err error) error {
+  	if sc.IsConnectionInitialisationTimeout(err) {
+			// restart the client
+  		return nil
+  	}
+
+		// catch other errors...
+
+		return err
+  })
+```
+
+##### WebSocket Connection Idle Timeout
+
+This error happens if the websocket connection idle timeout duration is larger than `0` and the subscription client doesn't receive any message from the server, include keep-alive message for a long duration. The setting is disabled by default and can be configured by the `WithWebsocketConnectionIdleTimeout` method.
+
+```go
+client := graphql.NewSubscriptionClient(serverEndpoint).
+	WithWebsocketConnectionIdleTimeout(time.Minute).
+  OnError(func(sc *graphql.SubscriptionClient, err error) error {
+  	if sc.IsWebsocketConnectionIdleTimeout(err) {
+			// restart the client
+  		return nil
+  	}
+
+		// catch other errors...
+
+		return err
   })
 ```
 

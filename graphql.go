@@ -5,10 +5,13 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
+	"time"
 
 	"github.com/hasura/go-graphql-client/pkg/jsonutil"
 )
@@ -17,6 +20,15 @@ import (
 // The net/*http.Client type satisfies this interface.
 type Doer interface {
 	Do(*http.Request) (*http.Response, error)
+}
+
+// ClientOption is used to configure client with options
+type ClientOption func(c *Client)
+
+func WithRetry(retries int) ClientOption {
+	return func(c *Client) {
+		c.retries = retries
+	}
 }
 
 // This function allows you to tweak the HTTP request. It might be useful to set authentication
@@ -29,19 +41,27 @@ type Client struct {
 	httpClient      Doer
 	requestModifier RequestModifier
 	debug           bool
+	retries         int // max number of retries, defaults to 0 for no retry see WithRetry option
 }
 
 // NewClient creates a GraphQL client targeting the specified GraphQL server URL.
 // If httpClient is nil, then http.DefaultClient is used.
-func NewClient(url string, httpClient Doer) *Client {
+func NewClient(url string, httpClient Doer, options ...ClientOption) *Client {
 	if httpClient == nil {
 		httpClient = http.DefaultClient
 	}
-	return &Client{
+
+	c := &Client{
 		url:             url,
 		httpClient:      httpClient,
 		requestModifier: nil,
 	}
+
+	for _, opt := range options {
+		opt(c)
+	}
+
+	return c
 }
 
 // Query executes a single GraphQL query request,
@@ -122,6 +142,37 @@ func (c *Client) buildQueryAndOptions(op operationType, v any, variables map[str
 
 // Request the common method that send graphql request
 func (c *Client) request(ctx context.Context, query string, variables map[string]any, options *constructOptionsOutput) ([]byte, []byte, *http.Response, io.Reader, Errors) {
+	var (
+		rawData, extensions []byte
+		resp                *http.Response
+		respReader          io.Reader
+		err                 Errors
+	)
+	c.withRetry(func() error {
+		rawData, extensions, resp, respReader, err = c.doRequest(ctx, query, variables, options)
+		return err
+	})
+	return rawData, extensions, resp, respReader, err
+}
+
+func (c *Client) withRetry(exec func() error) {
+	maxAttempts := c.retries + 1
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		err := exec()
+		if err == nil {
+			return
+		}
+
+		if attempt == maxAttempts || !c.shouldRetry(err) {
+			return
+		}
+
+		time.Sleep(time.Duration(attempt) * time.Second)
+	}
+}
+
+// doRequest sends graphql request.
+func (c *Client) doRequest(ctx context.Context, query string, variables map[string]any, options *constructOptionsOutput) ([]byte, []byte, *http.Response, io.Reader, Errors) {
 	in := GraphQLRequestPayload{
 		Query:     query,
 		Variables: variables,
@@ -254,6 +305,15 @@ func (c *Client) request(ctx context.Context, query string, variables map[string
 	}
 
 	return rawData, extensions, resp, respReader, nil
+}
+
+// shouldRetry determines whether a request should retry or not.
+func (c *Client) shouldRetry(err error) bool {
+	var uErr *url.Error
+	if errors.As(err, &uErr) {
+		return uErr.Timeout() || uErr.Temporary()
+	}
+	return true
 }
 
 // do executes a single GraphQL operation.

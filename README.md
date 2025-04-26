@@ -8,48 +8,47 @@ The subscription client follows Apollo client specification https://github.com/a
 
 Package `graphql` provides a GraphQL client implementation.
 
-For more information, see package [`github.com/shurcooL/githubv4`](https://github.com/shurcooL/githubv4), which is a specialized version targeting GitHub GraphQL API v4. That package is driving the feature development.
-
 **Note**: Before v0.8.0, `QueryRaw`, `MutateRaw`, and `Subscribe` methods return `*json.RawMessage`. This output type is redundant to be decoded. From v0.8.0, the output type is changed to `[]byte`.
 
 - [go-graphql-client](#go-graphql-client)
-  - [Installation](#installation)
-  - [Usage](#usage)
-    - [Authentication](#authentication)
-      - [WithRequestModifier](#withrequestmodifier)
-      - [OAuth2](#oauth2)
-    - [Simple Query](#simple-query)
-    - [Arguments and Variables](#arguments-and-variables)
-    - [Custom scalar tag](#custom-scalar-tag)
-    - [Skip GraphQL field](#skip-graphql-field)
-    - [Inline Fragments](#inline-fragments)
-    - [Specify GraphQL type name](#specify-graphql-type-name)
-    - [Mutations](#mutations)
-      - [Mutations Without Fields](#mutations-without-fields)
-    - [Subscription](#subscription)
-      - [Usage](#usage-1)
-      - [Subscribe](#subscribe)
-      - [Stop the subscription](#stop-the-subscription)
-      - [Authentication](#authentication-1)
-      - [Options](#options)
-      - [Subscription Protocols](#subscription-protocols)
-      - [Handle connection error](#handle-connection-error)
-        - [Connection Initialisation Timeout](#connection-initialisation-timeout)
-        - [WebSocket Connection Idle Timeout](#websocket-connection-idle-timeout)
-      - [Events](#events)
-      - [Custom HTTP Client](#custom-http-client)
-      - [Custom WebSocket client](#custom-websocket-client)
-    - [Options](#options-1)
-    - [Execute pre-built query](#execute-pre-built-query)
-    - [Get extensions from response](#get-extensions-from-response)
-    - [Get headers from response](#get-headers-from-response)
-    - [With operation name (deprecated)](#with-operation-name-deprecated)
-    - [Raw bytes response](#raw-bytes-response)
-    - [Multiple mutations with ordered map](#multiple-mutations-with-ordered-map)
-    - [Debugging and Unit test](#debugging-and-unit-test)
-  - [Directories](#directories)
-  - [References](#references)
-  - [License](#license)
+	- [Installation](#installation)
+	- [Usage](#usage)
+		- [Authentication](#authentication)
+			- [WithRequestModifier](#withrequestmodifier)
+			- [OAuth2](#oauth2)
+		- [Simple Query](#simple-query)
+		- [Arguments and Variables](#arguments-and-variables)
+		- [Custom scalar tag](#custom-scalar-tag)
+		- [Skip GraphQL field](#skip-graphql-field)
+		- [Inline Fragments](#inline-fragments)
+		- [Specify GraphQL type name](#specify-graphql-type-name)
+		- [Mutations](#mutations)
+			- [Mutations Without Fields](#mutations-without-fields)
+		- [Retry Options](#retry-options)
+		- [Subscription](#subscription)
+			- [Usage](#usage-1)
+			- [Subscribe](#subscribe)
+			- [Stop the subscription](#stop-the-subscription)
+			- [Authentication](#authentication-1)
+			- [Options](#options)
+			- [Subscription Protocols](#subscription-protocols)
+			- [Handle connection error](#handle-connection-error)
+				- [Connection Initialisation Timeout](#connection-initialisation-timeout)
+				- [WebSocket Connection Idle Timeout](#websocket-connection-idle-timeout)
+			- [Events](#events)
+			- [Custom HTTP Client](#custom-http-client)
+			- [Custom WebSocket client](#custom-websocket-client)
+		- [Options](#options-1)
+		- [Execute pre-built query](#execute-pre-built-query)
+		- [Get extensions from response](#get-extensions-from-response)
+		- [Get headers from response](#get-headers-from-response)
+		- [With operation name (deprecated)](#with-operation-name-deprecated)
+		- [Raw bytes response](#raw-bytes-response)
+		- [Multiple mutations with ordered map](#multiple-mutations-with-ordered-map)
+		- [Debugging and Unit test](#debugging-and-unit-test)
+	- [Directories](#directories)
+	- [References](#references)
+	- [License](#license)
 
 ## Installation
 
@@ -488,6 +487,29 @@ fmt.Printf("Created a review: %s.\n", m.CreateReview)
 
 // Output:
 // Created a review: .
+```
+
+### Retry Options
+
+Construct the client with the following options:
+
+```go
+client := graphql.NewClient("/graphql", http.DefaultClient,
+	// number of retries
+	graphql.WithRetry(3),
+	// base backoff interval. Optional, default 1 second.
+	// Prioritize the Retry-After header if it exists in the response.
+	graphql.WithRetryBaseDelay(time.Second),
+	// exponential rate. Optional, default 2.0
+	graphql.WithRetryExponentialRate(2),
+	// retry on http statuses. Optional, default: 429, 502, 503, 504
+	graphql.WithRetryHTTPStatus([]int{http.StatusServiceUnavailable}),
+	// if the http status is 200 but the graphql response is error, 
+	// use this option to check if the error is retryable.
+	graphql.WithRetryOnGraphQLError(func(errs graphql.Errors) bool {
+		return len(errs) == 1 && errs[0].Message == "Field 'user' is missing required arguments: login"
+	}),
+)
 ```
 
 ### Subscription

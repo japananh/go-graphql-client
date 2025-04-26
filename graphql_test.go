@@ -1,6 +1,7 @@
 package graphql_test
 
 import (
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"errors"
@@ -42,7 +43,10 @@ func TestClient_Query_partialDataWithErrorResponse(t *testing.T) {
 			]
 		}`)
 	})
-	client := graphql.NewClient("/graphql", &http.Client{Transport: localRoundTripper{handler: mux}})
+	client := graphql.NewClient(
+		"/graphql",
+		&http.Client{Transport: localRoundTripper{handler: mux}},
+	)
 
 	var q struct {
 		Node1 *struct {
@@ -100,7 +104,10 @@ func TestClient_Query_partialDataRawQueryWithErrorResponse(t *testing.T) {
 			]
 		}`)
 	})
-	client := graphql.NewClient("/graphql", &http.Client{Transport: localRoundTripper{handler: mux}})
+	client := graphql.NewClient(
+		"/graphql",
+		&http.Client{Transport: localRoundTripper{handler: mux}},
+	)
 
 	var q struct {
 		Node1 json.RawMessage `graphql:"node1"`
@@ -156,7 +163,10 @@ func TestClient_Query_noDataWithErrorResponse(t *testing.T) {
 			]
 		}`)
 	})
-	client := graphql.NewClient("/graphql", &http.Client{Transport: localRoundTripper{handler: mux}})
+	client := graphql.NewClient(
+		"/graphql",
+		&http.Client{Transport: localRoundTripper{handler: mux}},
+	)
 
 	var q struct {
 		User struct {
@@ -206,7 +216,10 @@ func TestClient_Query_errorStatusCode(t *testing.T) {
 	mux.HandleFunc("/graphql", func(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, "important message", http.StatusInternalServerError)
 	})
-	client := graphql.NewClient("/graphql", &http.Client{Transport: localRoundTripper{handler: mux}})
+	client := graphql.NewClient(
+		"/graphql",
+		&http.Client{Transport: localRoundTripper{handler: mux}},
+	)
 
 	var q struct {
 		User struct {
@@ -324,7 +337,10 @@ func TestClient_Query_emptyVariables(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		mustWrite(w, `{"data": {"user": {"name": "Gopher"}}}`)
 	})
-	client := graphql.NewClient("/graphql", &http.Client{Transport: localRoundTripper{handler: mux}})
+	client := graphql.NewClient(
+		"/graphql",
+		&http.Client{Transport: localRoundTripper{handler: mux}},
+	)
 
 	var q struct {
 		User struct {
@@ -352,7 +368,10 @@ func TestClient_Query_ignoreFields(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		mustWrite(w, `{"data": {"user": {"name": "Gopher"}}}`)
 	})
-	client := graphql.NewClient("/graphql", &http.Client{Transport: localRoundTripper{handler: mux}})
+	client := graphql.NewClient(
+		"/graphql",
+		&http.Client{Transport: localRoundTripper{handler: mux}},
+	)
 
 	var q struct {
 		User struct {
@@ -384,7 +403,10 @@ func TestClient_Query_RawResponse(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		mustWrite(w, `{"data": {"user": {"name": "Gopher"}}}`)
 	})
-	client := graphql.NewClient("/graphql", &http.Client{Transport: localRoundTripper{handler: mux}})
+	client := graphql.NewClient(
+		"/graphql",
+		&http.Client{Transport: localRoundTripper{handler: mux}},
+	)
 
 	var q struct {
 		User struct {
@@ -394,12 +416,14 @@ func TestClient_Query_RawResponse(t *testing.T) {
 	}
 	rawBytes, err := client.QueryRaw(context.Background(), &q, map[string]interface{}{})
 	if err != nil {
-		t.Fatal(err)
+		t.Error(err)
+		t.FailNow()
 	}
 
 	err = json.Unmarshal(rawBytes, &q)
 	if err != nil {
-		t.Fatal(err)
+		t.Error(err)
+		t.FailNow()
 	}
 
 	if got, want := q.User.Name, "Gopher"; got != want {
@@ -418,7 +442,10 @@ func TestClient_Exec_Query(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		mustWrite(w, `{"data": {"user": {"name": "Gopher"}}}`)
 	})
-	client := graphql.NewClient("/graphql", &http.Client{Transport: localRoundTripper{handler: mux}})
+	client := graphql.NewClient(
+		"/graphql",
+		&http.Client{Transport: localRoundTripper{handler: mux}},
+	)
 
 	var q struct {
 		User struct {
@@ -448,7 +475,10 @@ func TestClient_Exec_QueryRaw(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		mustWrite(w, `{"data": {"user": {"name": "Gopher"}}}`)
 	})
-	client := graphql.NewClient("/graphql", &http.Client{Transport: localRoundTripper{handler: mux}})
+	client := graphql.NewClient(
+		"/graphql",
+		&http.Client{Transport: localRoundTripper{handler: mux}},
+	)
 
 	var q struct {
 		User struct {
@@ -457,7 +487,11 @@ func TestClient_Exec_QueryRaw(t *testing.T) {
 		}
 	}
 
-	rawBytes, err := client.ExecRaw(context.Background(), "{user{id,name}}", map[string]interface{}{})
+	rawBytes, err := client.ExecRaw(
+		context.Background(),
+		"{user{id,name}}",
+		map[string]interface{}{},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -480,9 +514,15 @@ func TestClient_BindExtensions(t *testing.T) {
 			t.Errorf("got body: %v, want %v", got, want)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		mustWrite(w, `{"data": {"user": {"name": "Gopher"}}, "extensions": {"id": 1, "domain": "users"}}`)
+		mustWrite(
+			w,
+			`{"data": {"user": {"name": "Gopher"}}, "extensions": {"id": 1, "domain": "users"}}`,
+		)
 	})
-	client := graphql.NewClient("/graphql", &http.Client{Transport: localRoundTripper{handler: mux}})
+	client := graphql.NewClient(
+		"/graphql",
+		&http.Client{Transport: localRoundTripper{handler: mux}},
+	)
 
 	var q struct {
 		User struct {
@@ -506,7 +546,13 @@ func TestClient_BindExtensions(t *testing.T) {
 	}
 
 	headers := http.Header{}
-	err = client.Query(context.Background(), &q, map[string]interface{}{}, graphql.BindExtensions(&ext), graphql.BindResponseHeaders(&headers))
+	err = client.Query(
+		context.Background(),
+		&q,
+		map[string]interface{}{},
+		graphql.BindExtensions(&ext),
+		graphql.BindResponseHeaders(&headers),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -545,9 +591,15 @@ func TestClient_Exec_QueryRawWithExtensions(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set(testResponseHeader, testResponseHeaderValue)
-		mustWrite(w, `{"data": {"user": {"name": "Gopher"}}, "extensions": {"id": 1, "domain": "users"}}`)
+		mustWrite(
+			w,
+			`{"data": {"user": {"name": "Gopher"}}, "extensions": {"id": 1, "domain": "users"}}`,
+		)
 	})
-	client := graphql.NewClient("/graphql", &http.Client{Transport: localRoundTripper{handler: mux}})
+	client := graphql.NewClient(
+		"/graphql",
+		&http.Client{Transport: localRoundTripper{handler: mux}},
+	)
 
 	var ext struct {
 		ID     int    `json:"id"`
@@ -555,7 +607,12 @@ func TestClient_Exec_QueryRawWithExtensions(t *testing.T) {
 	}
 
 	headers := http.Header{}
-	_, extensions, err := client.ExecRawWithExtensions(context.Background(), "{user{id,name}}", map[string]interface{}{}, graphql.BindResponseHeaders(&headers))
+	_, extensions, err := client.ExecRawWithExtensions(
+		context.Background(),
+		"{user{id,name}}",
+		map[string]interface{}{},
+		graphql.BindResponseHeaders(&headers),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -581,7 +638,12 @@ func TestClient_Exec_QueryRawWithExtensions(t *testing.T) {
 	}
 
 	if headerValue := headers.Get(testResponseHeader); headerValue != testResponseHeaderValue {
-		t.Errorf("got headers[%s]: %q, want: %s", testResponseHeader, headerValue, testResponseHeaderValue)
+		t.Errorf(
+			"got headers[%s]: %q, want: %s",
+			testResponseHeader,
+			headerValue,
+			testResponseHeaderValue,
+		)
 	}
 }
 
@@ -612,6 +674,7 @@ func mustRead(r io.Reader) string {
 	if err != nil {
 		panic(err)
 	}
+
 	return string(b)
 }
 
@@ -671,12 +734,82 @@ func TestClientOption_WithRetry_succeed(t *testing.T) {
 
 func TestClientOption_WithRetry_maxRetriesExceeded(t *testing.T) {
 	var (
-		attempts    int
-		maxAttempts = 2
+		attempts             int
+		maxAttempts          = 3
+		retryBase            = time.Second / 2
+		retryExponentialRate = 2.0
 	)
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/graphql", func(w http.ResponseWriter, req *http.Request) {
 		attempts++
+		// Always fail with a temporary error
+		http.Error(w, "temporary error", http.StatusServiceUnavailable)
+	})
+
+	client := graphql.NewClient("/graphql",
+		&http.Client{
+			Transport: localRoundTripper{
+				handler: mux,
+			},
+		},
+		graphql.WithRetry(maxAttempts-1),
+		graphql.WithRetryBaseDelay(retryBase),
+		graphql.WithRetryExponentialRate(retryExponentialRate),
+		graphql.WithRetryHTTPStatus([]int{http.StatusServiceUnavailable}),
+	)
+
+	var q struct {
+		User struct {
+			Name string
+		}
+	}
+
+	start := time.Now()
+	err := client.Query(context.Background(), &q, nil)
+	if err == nil {
+		t.Fatal("got nil, want error")
+	}
+
+	latency := time.Now().Sub(start)
+	// Check that we got the max retries exceeded error
+	var gqlErrs graphql.Errors
+	if !errors.As(err, &gqlErrs) {
+		t.Fatalf("got %T, want graphql.Errors", err)
+	}
+
+	if len(gqlErrs) != 1 {
+		t.Fatalf("got %d, want 1 error", len(gqlErrs))
+	}
+
+	// First request does not count
+	if attempts != maxAttempts {
+		t.Errorf("got %d attempts, want %d", attempts, maxAttempts)
+	}
+
+	expectedLatency := time.Duration(1.5 * float64(time.Second))
+	expectedLatencyMax := expectedLatency + time.Duration(0.5*float64(time.Second))
+	if latency < expectedLatency || latency > expectedLatencyMax {
+		t.Errorf(
+			"latency must be in between %s < %s, got %s",
+			expectedLatency,
+			expectedLatencyMax,
+			latency,
+		)
+	}
+}
+
+func TestClientOption_WithRetryAfter(t *testing.T) {
+	var (
+		attempts    int
+		maxAttempts = 2
+	)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/graphql", func(w http.ResponseWriter, req *http.Request) {
+		attempts++
+		w.Header().Add("Retry-After", "2")
+
 		// Always fail with a temporary error
 		http.Error(w, "temporary error", http.StatusServiceUnavailable)
 	})
@@ -696,11 +829,13 @@ func TestClientOption_WithRetry_maxRetriesExceeded(t *testing.T) {
 		}
 	}
 
+	start := time.Now()
 	err := client.Query(context.Background(), &q, nil)
 	if err == nil {
 		t.Fatal("got nil, want error")
 	}
 
+	latency := time.Now().Sub(start)
 	// Check that we got the max retries exceeded error
 	var gqlErrs graphql.Errors
 	if !errors.As(err, &gqlErrs) {
@@ -714,6 +849,17 @@ func TestClientOption_WithRetry_maxRetriesExceeded(t *testing.T) {
 	// First request does not count
 	if attempts != maxAttempts {
 		t.Errorf("got %d attempts, want %d", attempts, maxAttempts)
+	}
+
+	expectedLatency := time.Duration(2 * time.Second)
+	expectedLatencyMax := expectedLatency + time.Duration(0.5*float64(time.Second))
+	if latency < expectedLatency || latency > expectedLatencyMax {
+		t.Errorf(
+			"latency must be in between %s < %s, got %s",
+			expectedLatency,
+			expectedLatencyMax,
+			latency,
+		)
 	}
 }
 
@@ -763,5 +909,99 @@ func TestClientOption_WithRetry_shouldNotRetry(t *testing.T) {
 	// Should not retry on permanent URL errors
 	if attempts != 1 {
 		t.Errorf("got %d attempts, want 1", attempts)
+	}
+}
+
+func TestClient_Query_retryGraphQLError(t *testing.T) {
+	var (
+		attempts    int
+		maxAttempts = 3
+	)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/graphql", func(w http.ResponseWriter, req *http.Request) {
+		attempts++
+		w.Header().Set("Content-Type", "application/json")
+		mustWrite(w, `{
+			"errors": [
+				{
+					"message": "Field 'user' is missing required arguments: login",
+					"locations": [
+						{
+							"line": 7,
+							"column": 3
+						}
+					]
+				}
+			]
+		}`)
+	})
+
+	client := graphql.NewClient(
+		"/graphql",
+		&http.Client{Transport: localRoundTripper{handler: mux}},
+		graphql.WithRetry(maxAttempts-1),
+		graphql.WithRetryOnGraphQLError(func(errs graphql.Errors) bool {
+			return len(errs) == 1 &&
+				errs[0].Message == "Field 'user' is missing required arguments: login"
+		}),
+	)
+
+	var q struct {
+		User struct {
+			Name string
+		}
+	}
+
+	err := client.Query(context.Background(), &q, nil)
+	if err == nil {
+		t.Fatal("got error: nil, want: non-nil")
+	}
+
+	if got, want := err.Error(), "Message: Field 'user' is missing required arguments: login, Locations: [{Line:7 Column:3}], Extensions: map[], Path: []"; got != want {
+		t.Errorf("got error: %v, want: %v", got, want)
+	}
+	if q.User.Name != "" {
+		t.Errorf("got non-empty q.User.Name: %v", q.User.Name)
+	}
+
+	if attempts != maxAttempts {
+		t.Errorf("got %d attempts, want %d", attempts, maxAttempts)
+	}
+}
+
+func TestClient_Query_Compression(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/graphql", func(w http.ResponseWriter, req *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Encoding", "gzip")
+
+		gw := gzip.NewWriter(w)
+		_, err := gw.Write([]byte(`{"data": {"user": {"name": "Gopher"}}}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		gw.Close()
+	})
+
+	client := graphql.NewClient(
+		"/graphql",
+		&http.Client{Transport: localRoundTripper{handler: mux}},
+	)
+
+	var q struct {
+		User struct {
+			Name string
+		}
+	}
+
+	err := client.Query(context.Background(), &q, nil)
+	if err != nil {
+		t.Fatalf("want: nil, got: %s", err)
+	}
+
+	if q.User.Name != "Gopher" {
+		t.Errorf("got invalid q.User.Name: %v, want: Gopher", q.User.Name)
 	}
 }

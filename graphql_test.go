@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/hasura/go-graphql-client"
 )
@@ -617,5 +619,149 @@ func mustWrite(w io.Writer, s string) {
 	_, err := io.WriteString(w, s)
 	if err != nil {
 		panic(err)
+	}
+}
+
+func TestClientOption_WithRetry_succeed(t *testing.T) {
+	var (
+		attempts    int
+		maxAttempts = 3
+	)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/graphql", func(w http.ResponseWriter, req *http.Request) {
+		attempts++
+		// Simulate a temporary network error except for the last attempt
+		if attempts <= maxAttempts-1 {
+			http.Error(w, "temporary error", http.StatusServiceUnavailable)
+			return
+		}
+		// Succeed on the last attempt
+		w.Header().Set("Content-Type", "application/json")
+		mustWrite(w, `{"data": {"user": {"name": "Gopher"}}}`)
+	})
+
+	client := graphql.NewClient("/graphql",
+		&http.Client{
+			Transport: localRoundTripper{
+				handler: mux,
+			},
+		},
+		graphql.WithRetry(maxAttempts-1),
+	)
+
+	var q struct {
+		User struct {
+			Name string
+		}
+	}
+
+	err := client.Query(context.Background(), &q, nil)
+	if err != nil {
+		t.Fatalf("got error: %v, want nil", err)
+	}
+
+	if attempts != maxAttempts {
+		t.Errorf("got %d attempts, want %d", attempts, maxAttempts)
+	}
+
+	if q.User.Name != "Gopher" {
+		t.Errorf("got q.User.Name: %q, want Gopher", q.User.Name)
+	}
+}
+
+func TestClientOption_WithRetry_maxRetriesExceeded(t *testing.T) {
+	var (
+		attempts    int
+		maxAttempts = 2
+	)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/graphql", func(w http.ResponseWriter, req *http.Request) {
+		attempts++
+		// Always fail with a temporary error
+		http.Error(w, "temporary error", http.StatusServiceUnavailable)
+	})
+
+	client := graphql.NewClient("/graphql",
+		&http.Client{
+			Transport: localRoundTripper{
+				handler: mux,
+			},
+		},
+		graphql.WithRetry(maxAttempts-1),
+	)
+
+	var q struct {
+		User struct {
+			Name string
+		}
+	}
+
+	err := client.Query(context.Background(), &q, nil)
+	if err == nil {
+		t.Fatal("got nil, want error")
+	}
+
+	// Check that we got the max retries exceeded error
+	var gqlErrs graphql.Errors
+	if !errors.As(err, &gqlErrs) {
+		t.Fatalf("got %T, want graphql.Errors", err)
+	}
+
+	if len(gqlErrs) != 1 {
+		t.Fatalf("got %d, want 1 error", len(gqlErrs))
+	}
+
+	// First request does not count
+	if attempts != maxAttempts {
+		t.Errorf("got %d attempts, want %d", attempts, maxAttempts)
+	}
+}
+
+// Define the custom RoundTripper type
+type roundTripperWithRetryCount struct {
+	Transport *http.Transport
+	attempts  *int
+}
+
+// Define RoundTrip method for the type
+func (c roundTripperWithRetryCount) RoundTrip(req *http.Request) (*http.Response, error) {
+	if c.attempts != nil {
+		*c.attempts++
+	}
+	return c.Transport.RoundTrip(req)
+}
+
+func TestClientOption_WithRetry_shouldNotRetry(t *testing.T) {
+	var attempts int
+
+	client := graphql.NewClient("/graphql",
+		&http.Client{
+			Transport: roundTripperWithRetryCount{
+				attempts: &attempts,
+				Transport: &http.Transport{
+					DialContext: (&net.Dialer{
+						Timeout:   3 * time.Second,
+						KeepAlive: 3 * time.Second,
+					}).DialContext,
+				},
+			},
+		},
+		graphql.WithRetry(3),
+	)
+
+	var q struct {
+		User struct {
+			Name string
+		}
+	}
+
+	err := client.Query(context.Background(), &q, nil)
+	if err == nil {
+		t.Fatal("got nil, want error")
+	}
+
+	// Should not retry on permanent URL errors
+	if attempts != 1 {
+		t.Errorf("got %d attempts, want 1", attempts)
 	}
 }
